@@ -66,6 +66,9 @@ static uart_t _uart_bus_array[3] = {
 };
 #endif
 
+int rxfifo_cnt_mismatch_counter =0;
+int rxfifo_cnt_mismatch_large_counter =0;
+
 static void IRAM_ATTR _uart_isr(void *arg)
 {
     uint8_t i, c;
@@ -80,7 +83,22 @@ static void IRAM_ATTR _uart_isr(void *arg)
         uart->dev->int_clr.rxfifo_full = 1;
         uart->dev->int_clr.frm_err = 1;
         uart->dev->int_clr.rxfifo_tout = 1;
+
+        int n=0;
         while(uart->dev->status.rxfifo_cnt || (uart->dev->mem_rx_status.wr_addr != uart->dev->mem_rx_status.rd_addr)) {
+            if(uart->dev->status.rxfifo_cnt==0 &&  (uart->dev->mem_rx_status.wr_addr != uart->dev->mem_rx_status.rd_addr)) {
+               rxfifo_cnt_mismatch_counter++;
+               n++;
+               if(n>1) {
+                   rxfifo_cnt_mismatch_large_counter++;
+                   volatile uint8_t junk; // no optimization!
+
+                   while(uart->dev->mem_rx_status.wr_addr != uart->dev->mem_rx_status.rd_addr)
+                        junk = uart->dev->fifo.rw_byte;
+                   break;
+               }
+            }
+
             c = uart->dev->fifo.rw_byte;
             if(uart->queue != NULL && !xQueueIsQueueFullFromISR(uart->queue)) {
                 xQueueSendFromISR(uart->queue, &c, &xHigherPriorityTaskWoken);
@@ -96,27 +114,33 @@ static void IRAM_ATTR _uart_isr(void *arg)
 void uartEnableInterrupt(uart_t* uart)
 {
     UART_MUTEX_LOCK();
+    portMUX_TYPE isrMux = portMUX_INITIALIZER_UNLOCKED; // block till interrupt handler is set properly
+    portENTER_CRITICAL(&isrMux);
+    uart->dev->int_clr.val = 0xffffffff; //BN first clear then enable (also protected by critical)
     uart->dev->conf1.rxfifo_full_thrhd = 112;
     uart->dev->conf1.rx_tout_thrhd = 2;
     uart->dev->conf1.rx_tout_en = 1;
     uart->dev->int_ena.rxfifo_full = 1;
     uart->dev->int_ena.frm_err = 1;
     uart->dev->int_ena.rxfifo_tout = 1;
-    uart->dev->int_clr.val = 0xffffffff;
 
     esp_intr_alloc(UART_INTR_SOURCE(uart->num), (int)ESP_INTR_FLAG_IRAM, _uart_isr, NULL, &uart->intr_handle);
+    portEXIT_CRITICAL(&isrMux);
     UART_MUTEX_UNLOCK();
 }
 
 void uartDisableInterrupt(uart_t* uart)
 {
     UART_MUTEX_LOCK();
+    portMUX_TYPE isrMux = portMUX_INITIALIZER_UNLOCKED; // block till interrupt handler is cleared properly
+    portENTER_CRITICAL(&isrMux);
     uart->dev->conf1.val = 0;
     uart->dev->int_ena.val = 0;
     uart->dev->int_clr.val = 0xffffffff;
 
-    esp_intr_free(uart->intr_handle);
+    esp_intr_free(uart->intr_handle); // should dereference then free, critical should protect against interrupt happenning now
     uart->intr_handle = NULL;
+    portEXIT_CRITICAL(&isrMux);
 
     UART_MUTEX_UNLOCK();
 }
@@ -140,7 +164,7 @@ void uartDetachTx(uart_t* uart)
 
 void uartAttachRx(uart_t* uart, uint8_t rxPin, bool inverted)
 {
-    if(uart == NULL || rxPin > 39) {
+    if(uart == NULL || (rxPin > 39 && rxPin!=56) ) {
         return;
     }
     pinMode(rxPin, INPUT);
