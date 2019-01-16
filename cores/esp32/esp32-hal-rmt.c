@@ -46,8 +46,8 @@
 #define _INT_THR_EVNT(channel)  ((__INT_THR_EVNT)<<(channel))
 
 #if CONFIG_DISABLE_HAL_LOCKS
-# define UART_MUTEX_LOCK(channel)
-# define UART_MUTEX_UNLOCK(channel)
+# define RMT_MUTEX_LOCK(channel)
+# define RMT_MUTEX_UNLOCK(channel)
 #else
 # define RMT_MUTEX_LOCK(channel)    do {} while (xSemaphoreTake(g_rmt_objlocks[channel], portMAX_DELAY) != pdPASS)
 # define RMT_MUTEX_UNLOCK(channel)  xSemaphoreGive(g_rmt_objlocks[channel])
@@ -156,7 +156,7 @@ bool rmtSetCarrier(rmt_obj_t* rmt, bool carrier_en, bool carrier_level, uint32_t
     RMT_MUTEX_LOCK(channel);
 
     RMT.carrier_duty_ch[channel].low = low;
-    RMT.carrier_duty_ch[channel].low = high;
+    RMT.carrier_duty_ch[channel].high = high;
     RMT.conf_ch[channel].conf0.carrier_en = carrier_en;
     RMT.conf_ch[channel].conf0.carrier_out_lv = carrier_level;
 
