@@ -50,12 +50,6 @@ extern "C" {
 
 #include "sdkconfig.h"
 
-#if CONFIG_FREERTOS_UNICORE
-#define ARDUINO_RUNNING_CORE 0
-#else
-#define ARDUINO_RUNNING_CORE 1
-#endif
-
 static xQueueHandle _network_event_queue;
 static TaskHandle_t _network_event_task_handle = NULL;
 static EventGroupHandle_t _network_event_group = NULL;
@@ -168,7 +162,7 @@ static bool espWiFiStop(){
     _esp_wifi_started = false;
     err = esp_wifi_stop();
     if(err){
-        log_e("Could not stop WiFi! %u", err);
+        log_e("Could not stop WiFi! %d", err);
         _esp_wifi_started = true;
         return false;
     }
@@ -339,7 +333,9 @@ const char * system_event_reasons[] = { "UNSPECIFIED", "AUTH_EXPIRE", "AUTH_LEAV
 #endif
 esp_err_t WiFiGenericClass::_eventCallback(void *arg, system_event_t *event)
 {
-    log_d("Event: %d - %s", event->event_id, system_event_names[event->event_id]);
+    if(event->event_id < 26) {
+        log_d("Event: %d - %s", event->event_id, system_event_names[event->event_id]);
+    }
     if(event->event_id == SYSTEM_EVENT_SCAN_DONE) {
         WiFiScanClass::_scanDone();
 
@@ -496,7 +492,7 @@ bool WiFiGenericClass::mode(wifi_mode_t m)
     esp_err_t err;
     err = esp_wifi_set_mode(m);
     if(err){
-        log_e("Could not set mode! %u", err);
+        log_e("Could not set mode! %d", err);
         return false;
     }
     return true;

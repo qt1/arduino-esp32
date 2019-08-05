@@ -1,5 +1,5 @@
 /*
- ESP8266WiFiSTA.cpp - WiFi library for esp8266
+ WiFiSTA.cpp - WiFi library for esp32
 
  Copyright (c) 2014 Ivan Grokhotkov. All rights reserved.
  This file is part of the esp8266 core for Arduino environment.
@@ -162,6 +162,8 @@ wl_status_t WiFiSTAClass::begin(const char* ssid, const char *passphrase, int32_
         esp_wifi_set_config(WIFI_IF_STA, &conf);
     } else if(status() == WL_CONNECTED){
         return WL_CONNECTED;
+    } else {
+        esp_wifi_set_config(WIFI_IF_STA, &conf);
     }
 
     if(!_useStaticIp) {
@@ -195,6 +197,12 @@ wl_status_t WiFiSTAClass::begin()
 
     if(!WiFi.enableSTA(true)) {
         log_e("STA enable failed!");
+        return WL_CONNECT_FAILED;
+    }
+
+    wifi_config_t current_conf;
+    if(esp_wifi_get_config(WIFI_IF_STA, &current_conf) != ESP_OK || esp_wifi_set_config(WIFI_IF_STA, &current_conf) != ESP_OK) {
+        log_e("config failed");
         return WL_CONNECT_FAILED;
     }
 
@@ -416,7 +424,10 @@ IPAddress WiFiSTAClass::localIP()
 uint8_t* WiFiSTAClass::macAddress(uint8_t* mac)
 {
     if(WiFiGenericClass::getMode() != WIFI_MODE_NULL){
-        esp_wifi_get_mac(WIFI_IF_STA, mac);
+        esp_wifi_get_mac(WIFI_IF_STA, mac);	
+    }
+    else{
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
     }
     return mac;
 }
@@ -430,10 +441,11 @@ String WiFiSTAClass::macAddress(void)
     uint8_t mac[6];
     char macStr[18] = { 0 };
     if(WiFiGenericClass::getMode() == WIFI_MODE_NULL){
-        return String();
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
     }
-    esp_wifi_get_mac(WIFI_IF_STA, mac);
-
+    else{
+        esp_wifi_get_mac(WIFI_IF_STA, mac);
+    }
     sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     return String(macStr);
 }
