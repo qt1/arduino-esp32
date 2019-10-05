@@ -55,6 +55,19 @@ typedef enum {
 
 #define ESP_IMAGE_HEADER_MAGIC 0xE9
 
+/**
+ * @brief ESP chip ID
+ *
+ */
+typedef enum {
+    ESP_CHIP_ID_ESP32 = 0x0000,  /*!< chip ID: ESP32 */
+    ESP_CHIP_ID_INVALID = 0xFFFF /*!< Invalid chip ID (we defined it to make sure the esp_chip_id_t is 2 bytes size) */
+} __attribute__((packed)) esp_chip_id_t;
+
+/** @cond */
+_Static_assert(sizeof(esp_chip_id_t) == 2, "esp_chip_id_t should be 16 bit");
+
+
 /* Main header of binary image */
 typedef struct {
     uint8_t magic;
@@ -71,8 +84,12 @@ typedef struct {
     uint8_t wp_pin;
     /* Drive settings for the SPI flash pins (read by ROM bootloader) */
     uint8_t spi_pin_drv[3];
-    /* Reserved bytes in ESP32 additional header space, currently unused */
-    uint8_t reserved[11];
+    /*!< Chip identification number */
+    esp_chip_id_t chip_id;
+    /*!< Minimum chip revision supported by image */
+    uint8_t min_chip_rev;
+    /*!< Reserved bytes in additional header space, currently unused */
+    uint8_t reserved[8];
     /* If 1, a SHA256 digest "simple hash" (of the entire image) is appended after the checksum. Included in image length. This digest
      * is separate to secure boot and only used for detecting corruption. For secure boot signed images, the signature
      * is appended after this (and the simple hash is included in the signed data). */
@@ -80,6 +97,8 @@ typedef struct {
 } __attribute__((packed))  esp_image_header_t;
 
 _Static_assert(sizeof(esp_image_header_t) == 24, "binary image header should be 24 bytes");
+
+#define ESP_IMAGE_HASH_LEN 32 /* Length of the appended SHA-256 digest */
 
 /* Header of binary image segment */
 typedef struct {
@@ -200,6 +219,16 @@ esp_err_t bootloader_load_image(const esp_partition_pos_t *part, esp_image_metad
  * @return As per esp_image_load_metadata().
  */
 esp_err_t esp_image_verify_bootloader(uint32_t *length);
+
+/**
+ * @brief Verify the bootloader image.
+ *
+ * @param[out] Metadata for the image. Only valid if result is ESP_OK.
+ *
+ * @return As per esp_image_load_metadata().
+ */
+esp_err_t esp_image_verify_bootloader_data(esp_image_metadata_t *data);
+
 
 typedef struct {
     uint32_t drom_addr;

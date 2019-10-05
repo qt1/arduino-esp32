@@ -94,25 +94,28 @@ bool WiFiAPClass::softAP(const char* ssid, const char* passphrase, int channel, 
 
     if(!WiFi.enableAP(true)) {
         // enable AP failed
+        log_e("enable AP first!");
         return false;
     }
 
-    if(!ssid || *ssid == 0 || strlen(ssid) > 31) {
-        // fail SSID too long or missing!
+    if(!ssid || *ssid == 0) {
+        // fail SSID missing
+        log_e("SSID missing!");
         return false;
     }
 
-    if(passphrase && (strlen(passphrase) > 63 || strlen(passphrase) < 8)) {
-        // fail passphrase to long or short!
+    if(passphrase && (strlen(passphrase) > 0 && strlen(passphrase) < 8)) {
+        // fail passphrase too short
+        log_e("passphrase too short!");
         return false;
     }
 
     esp_wifi_start();
 
     wifi_config_t conf;
-    strcpy(reinterpret_cast<char*>(conf.ap.ssid), ssid);
+    strlcpy(reinterpret_cast<char*>(conf.ap.ssid), ssid, sizeof(conf.ap.ssid));
     conf.ap.channel = channel;
-    conf.ap.ssid_len = strlen(ssid);
+    conf.ap.ssid_len = strlen(reinterpret_cast<char *>(conf.ap.ssid));
     conf.ap.ssid_hidden = ssid_hidden;
     conf.ap.max_connection = max_connection;
     conf.ap.beacon_interval = 100;
@@ -122,7 +125,7 @@ bool WiFiAPClass::softAP(const char* ssid, const char* passphrase, int channel, 
         *conf.ap.password = 0;
     } else {
         conf.ap.authmode = WIFI_AUTH_WPA2_PSK;
-        strcpy(reinterpret_cast<char*>(conf.ap.password), passphrase);
+        strlcpy(reinterpret_cast<char*>(conf.ap.password), passphrase, sizeof(conf.ap.password));
     }
 
     wifi_config_t conf_current;
@@ -232,6 +235,47 @@ IPAddress WiFiAPClass::softAPIP()
     return IPAddress(ip.ip.addr);
 }
 
+/**
+ * Get the softAP broadcast IP address.
+ * @return IPAddress softAP broadcastIP
+ */
+IPAddress WiFiAPClass::softAPBroadcastIP()
+{
+    tcpip_adapter_ip_info_t ip;
+    if(WiFiGenericClass::getMode() == WIFI_MODE_NULL){
+        return IPAddress();
+    }
+    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ip);
+    return WiFiGenericClass::calculateBroadcast(IPAddress(ip.gw.addr), IPAddress(ip.netmask.addr));
+}
+
+/**
+ * Get the softAP network ID.
+ * @return IPAddress softAP networkID
+ */
+IPAddress WiFiAPClass::softAPNetworkID()
+{
+    tcpip_adapter_ip_info_t ip;
+    if(WiFiGenericClass::getMode() == WIFI_MODE_NULL){
+        return IPAddress();
+    }
+    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ip);
+    return WiFiGenericClass::calculateNetworkID(IPAddress(ip.gw.addr), IPAddress(ip.netmask.addr));
+}
+
+/**
+ * Get the softAP subnet CIDR.
+ * @return uint8_t softAP subnetCIDR
+ */
+uint8_t WiFiAPClass::softAPSubnetCIDR()
+{
+    tcpip_adapter_ip_info_t ip;
+    if(WiFiGenericClass::getMode() == WIFI_MODE_NULL){
+        return (uint8_t)0;
+    }
+    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &ip);
+    return WiFiGenericClass::calculateSubnetCIDR(IPAddress(ip.netmask.addr));
+}
 
 /**
  * Get the softAP interface MAC address.

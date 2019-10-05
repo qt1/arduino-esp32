@@ -50,12 +50,6 @@ extern "C" {
 
 #include "sdkconfig.h"
 
-#if CONFIG_FREERTOS_UNICORE
-#define ARDUINO_RUNNING_CORE 0
-#else
-#define ARDUINO_RUNNING_CORE 1
-#endif
-
 static xQueueHandle _network_event_queue;
 static TaskHandle_t _network_event_task_handle = NULL;
 static EventGroupHandle_t _network_event_group = NULL;
@@ -96,7 +90,8 @@ static bool _start_network_event_task(){
         }
     }
     if(!_network_event_task_handle){
-        xTaskCreatePinnedToCore(_network_event_task, "network_event", 4096, NULL, 2, &_network_event_task_handle, CONFIG_TCPIP_TASK_AFFINITY);
+        xTaskCreatePinnedToCore(_network_event_task, "network_event", 4096, NULL,  ESP_TASKD_EVENT_PRIO - 1, &_network_event_task_handle, CONFIG_TCPIP_TASK_AFFINITY);
+//ESP   xTaskCreateUniversal(_network_event_task, "network_event", 4096, NULL, ESP_TASKD_EVENT_PRIO - 1, &_network_event_task_handle, CONFIG_ARDUINO_EVENT_RUNNING_CORE);
         if(!_network_event_task_handle){
             log_e("Network Event Task Start Failed!");
             return false;
@@ -168,7 +163,7 @@ static bool espWiFiStop(){
     _esp_wifi_started = false;
     err = esp_wifi_stop();
     if(err){
-        log_e("Could not stop WiFi! %u", err);
+        log_e("Could not stop WiFi! %d", err);
         _esp_wifi_started = true;
         return false;
     }
@@ -187,7 +182,7 @@ typedef struct WiFiEventCbList {
     WiFiEventSysCb scb;
     system_event_id_t event;
 
-    WiFiEventCbList() : id(current_id++) {}
+    WiFiEventCbList() : id(current_id++), cb(NULL), fcb(NULL), scb(NULL), event(SYSTEM_EVENT_WIFI_READY) {}
 } WiFiEventCbList_t;
 wifi_event_id_t WiFiEventCbList::current_id = 1;
 
@@ -339,7 +334,9 @@ const char * system_event_reasons[] = { "UNSPECIFIED", "AUTH_EXPIRE", "AUTH_LEAV
 #endif
 esp_err_t WiFiGenericClass::_eventCallback(void *arg, system_event_t *event)
 {
-    log_d("Event: %d - %s", event->event_id, system_event_names[event->event_id]);
+    if(event->event_id < 26) {
+        log_d("Event: %d - %s", event->event_id, system_event_names[event->event_id]);
+    }
     if(event->event_id == SYSTEM_EVENT_SCAN_DONE) {
         WiFiScanClass::_scanDone();
 
@@ -371,8 +368,7 @@ esp_err_t WiFiGenericClass::_eventCallback(void *arg, system_event_t *event)
             (reason >= WIFI_REASON_BEACON_TIMEOUT && reason != WIFI_REASON_AUTH_FAIL)) &&
             WiFi.getAutoReconnect())
         {
-            WiFi.enableSTA(false);
-            WiFi.enableSTA(true);
+            WiFi.disconnect();
             WiFi.begin();
         }
     } else if(event->event_id == SYSTEM_EVENT_STA_GOT_IP) {
@@ -497,7 +493,7 @@ bool WiFiGenericClass::mode(wifi_mode_t m)
     esp_err_t err;
     err = esp_wifi_set_mode(m);
     if(err){
-        log_e("Could not set mode! %u", err);
+        log_e("Could not set mode! %d", err);
         return false;
     }
     return true;
@@ -661,3 +657,45 @@ int WiFiGenericClass::hostByName(const char* aHostname, IPAddress& aResult)
     return (uint32_t)aResult != 0;
 }
 
+IPAddress WiFiGenericClass::calculateNetworkID(IPAddress ip, IPAddress subnet) {
+	IPAddress networkID;
+
+	for (size_t i = 0; i < 4; i++)
+		networkID[i] = subnet[i] & ip[i];
+
+	return networkID;
+}
+
+IPAddress WiFiGenericClass::calculateBroadcast(IPAddress ip, IPAddress subnet) {
+    IPAddress broadcastIp;
+    
+    for (int i = 0; i < 4; i++)
+        broadcastIp[i] = ~subnet[i] | ip[i];
+
+    return broadcastIp;
+}
+
+uint8_t WiFiGenericClass::calculateSubnetCIDR(IPAddress subnetMask) {
+	uint8_t CIDR = 0;
+
+	for (uint8_t i = 0; i < 4; i++) {
+		if (subnetMask[i] == 0x80)  // 128
+			CIDR += 1;
+		else if (subnetMask[i] == 0xC0)  // 192
+			CIDR += 2;
+		else if (subnetMask[i] == 0xE0)  // 224
+			CIDR += 3;
+		else if (subnetMask[i] == 0xF0)  // 242
+			CIDR += 4;
+		else if (subnetMask[i] == 0xF8)  // 248
+			CIDR += 5;
+		else if (subnetMask[i] == 0xFC)  // 252
+			CIDR += 6;
+		else if (subnetMask[i] == 0xFE)  // 254
+			CIDR += 7;
+		else if (subnetMask[i] == 0xFF)  // 255
+			CIDR += 8;
+	}
+
+	return CIDR;
+}
